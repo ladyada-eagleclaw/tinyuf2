@@ -43,9 +43,12 @@ uint8_t all_pins[] = {0,       1,       2,        3,        4,       5,  6,
                       PIN_SDA, PIN_SCL, PIN_MOSI, PIN_MISO, PIN_SCK, AD5};
 
 bool test = false;
+static const float DC_INPUT_MIN_VOLTS = 8.0f;
+static const float DC_INPUT_MAX_VOLTS = 13.0f;
 
 bool testpins(uint8_t a, uint8_t b, uint8_t *allpins, uint8_t num_allpins);
 void test_print_adc(void);
+static void test_board(void);
 
 /* This is an application to test Metro M7
  */
@@ -75,6 +78,8 @@ int main(void) {
 
   while (1) {
     loop();
+    // Failure messages may have no newline; drain libc before the USB FIFO.
+    fflush(stdout);
     tud_task();
     tud_cdc_write_flush();
   }
@@ -106,7 +111,27 @@ void loop(void) {
     return;
   }
 
+  test = false; // Run one pass per start command, including failed passes.
+
+  // Keep the ESP32 from driving the UART and SPI loopback pins during testing.
+  gpio_pin_config_t reset_config = {kGPIO_DigitalOutput, 0, kGPIO_NoIntmode};
+  IOMUXC_SetPinMux(ESP32_RESET_PINMUX, 0);
+  IOMUXC_SetPinConfig(ESP32_RESET_PINMUX, 0x10B0U);
+  GPIO_PinInit(ESP32_RESET_PORT, ESP32_RESET_PIN, &reset_config);
   delay(100);
+  test_board();
+
+  // Release every tested output before allowing the ESP32 to run, even on failure.
+  for (size_t i = 0; i < sizeof(all_pins); i++) {
+    pinMode(all_pins[i], INPUT);
+  }
+  for (uint8_t pin = AD0; pin <= AD5; pin++) {
+    pinMode(pin, INPUT);
+  }
+  GPIO_PinWrite(ESP32_RESET_PORT, ESP32_RESET_PIN, 1);
+}
+
+static void test_board(void) {
   Serial_printf("\n\r\n\rHello Metro M7 iMX RT1011 Test! %lu\n\r", millis());
 
   if (!testpins(0, 2, all_pins, sizeof(all_pins)))
@@ -140,11 +165,11 @@ void loop(void) {
     Serial_printf("5V power supply reading wrong?");
     return;
   }
-  // Test 5V
-  int nine_mV = (float)analogRead(AD0) * 11.0 * 3.3 * 1000 / 4095.0;
-  Serial_printf("9V out = %d\n\r", (int)nine_mV);
-  if (abs(nine_mV - 9000) > 1000) {
-    Serial_printf("9V power supply reading wrong?");
+  // Accept the fixture's 9V or 12V DC supply, with measurement tolerance.
+  float dc_input_volts = (float)analogRead(AD0) * 11.0f * 3.3f / 4095.0f;
+  Serial_printf("DC input = %d mV\n\r", (int)(dc_input_volts * 1000.0f));
+  if (dc_input_volts < DC_INPUT_MIN_VOLTS || dc_input_volts > DC_INPUT_MAX_VOLTS) {
+    Serial_printf("DC input power supply reading wrong?");
     return;
   }
   Serial_printf("*** TEST OK! ***\n\r");

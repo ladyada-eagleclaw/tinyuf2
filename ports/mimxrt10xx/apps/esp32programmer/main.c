@@ -40,7 +40,7 @@
 
 // Enable this for more reliable connection require esptool.py default reset option "--before default_reset"
 // i.e "--before no_reset" should not be include in the esptool.py command
-#define ESP32_DTR_RTS_BOOT_RESET_SUPPORT    0
+#define ESP32_DTR_RTS_BOOT_RESET_SUPPORT    1
 
 // optional API, not included in board_api.h
 int board_uart_read(uint8_t* buf, int len);
@@ -132,7 +132,9 @@ int main(void) {
     uint32_t count;
 
     // UART -> USB
-    count = (uint32_t)board_uart_read(serial_buf, sizeof(serial_buf));
+    // Leave UART bytes queued until the USB transmit FIFO has room for them.
+    count = tu_min32(tud_cdc_write_available(), sizeof(serial_buf));
+    count = (uint32_t)board_uart_read(serial_buf, count);
     if (count) {
       board_led_write(0xff);
 
@@ -143,10 +145,11 @@ int main(void) {
     }
 
     // USB -> UART
-    while (tud_cdc_available()) {
+    if (tud_cdc_available()) {
       board_led_write(0xff);
 
-      count = tud_cdc_read(serial_buf, sizeof(serial_buf));
+      // Service USB and UART receive between full-speed USB packet-sized writes.
+      count = tud_cdc_read(serial_buf, 64);
       board_uart_write(serial_buf, count);
 
       board_led_write(0);
