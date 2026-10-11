@@ -105,6 +105,16 @@ void esp32_manual_enter_dfu(void) {
 int main(void) {
   board_init();
 
+  // The fixture connects UART D0/D1 to D2/D3 for the GPIO loopback test.
+  // Release their startup trace outputs so they cannot drive the ESP32 UART.
+  gpio_pin_config_t input_config = { kGPIO_DigitalInput, 0, kGPIO_NoIntmode };
+  GPIO_PinInit(GPIO1, 13, &input_config);
+  IOMUXC_SetPinConfig(IOMUXC_GPIO_13_GPIOMUX_IO13, 0x00B0U);
+  IOMUXC_SetPinMux(IOMUXC_GPIO_13_GPIOMUX_IO13, 0);
+  GPIO_PinInit(GPIO1, 12, &input_config);
+  IOMUXC_SetPinConfig(IOMUXC_GPIO_12_GPIOMUX_IO12, 0x00B0U);
+  IOMUXC_SetPinMux(IOMUXC_GPIO_12_GPIOMUX_IO12, 0);
+
   gpio_pin_config_t pin_config = { kGPIO_DigitalOutput, 1, kGPIO_NoIntmode };
 
   // ESP GPIO0
